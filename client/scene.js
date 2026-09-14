@@ -1,8 +1,16 @@
 // Escena three.js: cancha, luces, cámara. Devuelve helpers para crear/mover entidades.
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { FIELD, PLAYER, BALL } from '../server/constants.js';
 
 const TEAM_COLOR = { red: 0xff5a5a, blue: 0x5a9dff };
+
+const TARGET_HEIGHT = 3.2; // alto del muñeco en unidades de juego
+// El GLB de Quaternius mira hacia +Z; nuestro "facing" 0 es +X. Este offset alinea
+// el modelo con la dirección de movimiento. Si el jugador corre de costado/espaldas,
+// probar 0, Math.PI/2, -Math.PI/2 o Math.PI.
+const MODEL_YAW_OFFSET = -Math.PI / 2;
 
 export function createScene(container) {
   const scene = new THREE.Scene();
@@ -82,23 +90,65 @@ function addGoals(scene) {
   }
 }
 
-export function makePlayerMesh(team) {
-  const group = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(PLAYER.RADIUS, 1.6, 4, 8),
+// Carga el GLB del jugador una vez. Devuelve { scene, animations } o null si falla.
+export function loadPlayerModel(url = '/models/player.glb') {
+  const loader = new GLTFLoader();
+  return new Promise((resolve) => {
+    loader.load(url, (gltf) => resolve({ scene: gltf.scene, animations: gltf.animations }),
+      undefined, (err) => { console.warn('No se pudo cargar el modelo, uso cápsulas:', err); resolve(null); });
+  });
+}
+
+function teamDisc(team) {
+  const disc = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.4, 1.4, 0.12, 20),
     new THREE.MeshStandardMaterial({ color: TEAM_COLOR[team] || 0xcccccc })
   );
-  body.position.y = PLAYER.RADIUS + 0.8;
-  group.add(body);
-  // Naricita para ver hacia dónde mira (dirección +X local).
-  const nose = new THREE.Mesh(
-    new THREE.ConeGeometry(0.4, 1.0, 8),
-    new THREE.MeshStandardMaterial({ color: 0xffffff })
-  );
-  nose.rotation.z = -Math.PI / 2;
-  nose.position.set(PLAYER.RADIUS + 0.6, PLAYER.RADIUS + 0.8, 0);
-  group.add(nose);
-  return group;
+  disc.position.y = 0.06;
+  return disc;
+}
+
+// Avatar de un jugador: clona el modelo (o cápsula de fallback) + mixer de animación.
+// Devuelve { obj, mixer, actions } — actions = { idle, run, jump } o null si es cápsula.
+export function makeAvatar(template, team) {
+  const group = new THREE.Group();
+  group.add(teamDisc(team)); // marca de equipo bajo los pies (siempre visible)
+
+  if (!template) {
+    // Fallback: cápsula del color del equipo.
+    const body = new THREE.Mesh(
+      new THREE.CapsuleGeometry(PLAYER.RADIUS, 1.6, 4, 8),
+      new THREE.MeshStandardMaterial({ color: TEAM_COLOR[team] || 0xcccccc })
+    );
+    body.position.y = PLAYER.RADIUS + 0.8;
+    group.add(body);
+    return { obj: group, mixer: null, actions: null };
+  }
+
+  const model = cloneSkinned(template.scene);
+  // Escalar a una altura consistente según su bounding box.
+  const box = new THREE.Box3().setFromObject(model);
+  const h = box.max.y - box.min.y || 1;
+  const s = TARGET_HEIGHT / h;
+  model.scale.setScalar(s);
+  model.position.y = -box.min.y * s; // apoyar los pies en y=0
+  model.rotation.y = MODEL_YAW_OFFSET;
+  group.add(model);
+
+  const mixer = new THREE.AnimationMixer(model);
+  const find = (kw) => template.animations.find((a) => a.name.toLowerCase().includes(kw));
+  const mk = (clip, loop) => {
+    if (!clip) return null;
+    const act = mixer.clipAction(clip);
+    if (loop === 'once') { act.setLoop(THREE.LoopOnce); act.clampWhenFinished = true; }
+    return act;
+  };
+  const actions = {
+    idle: mk(find('idle')),
+    run: mk(find('run')),
+    jump: mk(find('jump'), 'once'),
+  };
+  return { obj: group, mixer, actions };
 }
 
 export function makeBallMesh() {

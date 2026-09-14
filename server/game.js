@@ -182,6 +182,7 @@ export function snapshot(game) {
     players.push({
       id: p.id, name: p.name, team: p.team,
       x: +p.x.toFixed(2), z: +p.z.toFixed(2), f: +p.facing.toFixed(2),
+      k: p.input.kick, // patada apretada (para animación en el cliente)
     });
   }
   return {

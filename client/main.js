@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createScene, makePlayerMesh, makeBallMesh } from './scene.js';
+import { createScene, makeAvatar, makeBallMesh, loadPlayerModel } from './scene.js';
 import { connect } from './net.js';
 
 const INTERP_DELAY = 100; // ms de retraso para interpolar entre snapshots
@@ -8,8 +8,18 @@ const { scene, camera, renderer } = createScene(document.getElementById('app'));
 const ballMesh = makeBallMesh();
 scene.add(ballMesh);
 
-const playerMeshes = new Map(); // id -> THREE.Group
+// id -> { obj, mixer, actions, current, lastKick, jumpUntil }
+const players = new Map();
 let net = null;
+
+// Modelo del jugador: se precarga una vez y se clona por jugador.
+let playerTemplate = null;
+loadPlayerModel().then((t) => { playerTemplate = t; });
+
+// Sonido de patada (CC0 Kenney). Se clona por reproducción para que se solapen.
+const kickSound = new Audio('/sounds/kick.ogg');
+kickSound.volume = 0.35;
+function playKick() { const s = kickSound.cloneNode(); s.volume = 0.35; s.play().catch(() => {}); }
 
 // --- Input ---
 const keys = new Set();
@@ -53,6 +63,16 @@ function lerpAngle(a, b, t) {
   return a + d * t;
 }
 
+// Crossfade entre animaciones (idle/run/jump). No hace nada si es cápsula.
+function setAction(entry, name) {
+  if (!entry.actions || entry.current === name || !entry.actions[name]) return;
+  const next = entry.actions[name];
+  const prev = entry.current && entry.actions[entry.current];
+  next.reset().fadeIn(0.2).play();
+  if (prev) prev.fadeOut(0.2);
+  entry.current = name;
+}
+
 // Reconstruye el estado interpolado a mostrar este frame.
 function interpolatedState() {
   const buf = net.buffer;
@@ -75,25 +95,47 @@ function tickRender() {
 
   const { state, prev, alpha } = snap;
 
+  // dt del frame (para mixers de animación y suavizado de cámara).
+  const now = performance.now();
+  const dt = lastT === null ? 0.016 : Math.min(0.1, (now - lastT) / 1000);
+  lastT = now;
+
   // índice de posiciones previas por id para interpolar
   const prevById = new Map(prev.players.map((p) => [p.id, p]));
 
   const seen = new Set();
-  let me = null, myMesh = null;
+  let me = null, myEntry = null;
   for (const p of state.players) {
     seen.add(p.id);
-    let mesh = playerMeshes.get(p.id);
-    if (!mesh) { mesh = makePlayerMesh(p.team); scene.add(mesh); playerMeshes.set(p.id, mesh); }
+    let entry = players.get(p.id);
+    if (!entry) {
+      entry = makeAvatar(playerTemplate, p.team); // { obj, mixer, actions }
+      entry.current = null; entry.lastKick = false; entry.jumpUntil = 0;
+      scene.add(entry.obj);
+      players.set(p.id, entry);
+    }
     const pp = prevById.get(p.id) || p;
     const x = pp.x + (p.x - pp.x) * alpha;
     const z = pp.z + (p.z - pp.z) * alpha;
-    mesh.position.set(x, 0, z);
-    mesh.rotation.y = -lerpAngle(pp.f, p.f, alpha); // three: +Y gira, X local es facing
-    if (p.id === net.myId) { me = { x, z, f: lerpAngle(pp.f, p.f, alpha) }; myMesh = mesh; }
+    entry.obj.position.set(x, 0, z);
+    entry.obj.rotation.y = -lerpAngle(pp.f, p.f, alpha);
+
+    // Animación: patada (Jump) en flanco de subida, si no correr/idle según movimiento.
+    if (p.k && !entry.lastKick) {
+      const jd = entry.actions?.jump ? entry.actions.jump.getClip().duration : 0.6;
+      entry.jumpUntil = now + jd * 1000;
+      playKick();
+    }
+    entry.lastKick = p.k;
+    const moving = Math.hypot(p.x - pp.x, p.z - pp.z) > 0.05;
+    setAction(entry, now < entry.jumpUntil ? 'jump' : moving ? 'run' : 'idle');
+    entry.mixer?.update(dt);
+
+    if (p.id === net.myId) { me = { x, z, f: lerpAngle(pp.f, p.f, alpha) }; myEntry = entry; }
   }
   // sacar los que se fueron
-  for (const [id, mesh] of playerMeshes) {
-    if (!seen.has(id)) { scene.remove(mesh); playerMeshes.delete(id); }
+  for (const [id, entry] of players) {
+    if (!seen.has(id)) { scene.remove(entry.obj); players.delete(id); }
   }
 
   // pelota
@@ -103,21 +145,15 @@ function tickRender() {
 
   // cámara chase detrás del propio jugador (o vista aérea si aún no aparecí)
   if (me) {
-    // Suavizado independiente de FPS: constante de tiempo ~0.18s.
-    const now = performance.now();
-    const dt = lastT === null ? 0.016 : Math.min(0.1, (now - lastT) / 1000);
-    lastT = now;
-    const s = 1 - Math.exp(-dt / 0.38);
-
-    // El yaw persigue el rumbo del jugador. Cámara y flecha comparten este yaw.
+    // El yaw persigue el rumbo del jugador, suave (constante de tiempo ~0.38s).
     if (camYaw === null) camYaw = me.f;
-    else camYaw = lerpAngle(camYaw, me.f, s);
+    else camYaw = lerpAngle(camYaw, me.f, 1 - Math.exp(-dt / 0.38));
 
     const fx = Math.cos(camYaw), fz = Math.sin(camYaw); // "adelante" de la cámara
     const rx = -fz, rz = fx;                             // "derecha" de la cámara
 
-    // La flecha del jugador local mira igual que la cámara (no salta).
-    if (myMesh) myMesh.rotation.y = -camYaw;
+    // El jugador local mira igual que la cámara (no salta).
+    myEntry.obj.rotation.y = -camYaw;
 
     // Input relativo a la cámara: W siempre es hacia adentro de la pantalla.
     const k = readKeys();
