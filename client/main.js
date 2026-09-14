@@ -127,9 +127,9 @@ function tickRender() {
     if (len > 1) { mx /= len; mz /= len; }
     net.sendInput(mx, mz, k.kick);
 
-    const camPos = new THREE.Vector3(me.x - fx * 16, 12, me.z - fz * 16);
+    const camPos = new THREE.Vector3(me.x - fx * 20, 15, me.z - fz * 20);
     camera.position.lerp(camPos, 1 - Math.exp(-dt / 0.12));
-    camera.lookAt(me.x + fx * 6, 1, me.z + fz * 6);
+    camera.lookAt(me.x + fx * 8, 1, me.z + fz * 8);
   } else {
     camera.position.set(0, 55, 0.01);
     camera.lookAt(0, 0, 0);
