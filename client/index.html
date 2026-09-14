@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nevra Ball</title>
+  <style>
+    * { margin: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; background: #0b1e12; font-family: system-ui, sans-serif; }
+    #app { position: fixed; inset: 0; }
+    #hud {
+      position: fixed; top: 12px; left: 0; right: 0;
+      display: flex; justify-content: center; gap: 16px;
+      pointer-events: none; user-select: none;
+    }
+    #score {
+      background: rgba(0,0,0,.5); color: #fff; padding: 8px 18px; border-radius: 10px;
+      font-size: 26px; font-weight: 700; letter-spacing: 1px;
+    }
+    #score .red { color: #ff5a5a; }
+    #score .blue { color: #5a9dff; }
+    #banner {
+      position: fixed; inset: 0; display: none; place-items: center;
+      background: rgba(0,0,0,.55); color: #fff; font-size: 42px; font-weight: 800;
+      text-align: center; pointer-events: none;
+    }
+    #join {
+      position: fixed; inset: 0; display: grid; place-items: center;
+      background: #0b1e12; z-index: 10;
+    }
+    #join .card { background: #12351f; padding: 28px 32px; border-radius: 16px; text-align: center; color: #eafff0; }
+    #join h1 { font-size: 34px; margin-bottom: 6px; }
+    #join p { opacity: .7; margin-bottom: 18px; font-size: 14px; }
+    #join input {
+      display: block; width: 260px; padding: 12px 14px; font-size: 16px; border-radius: 10px;
+      border: none; margin: 0 auto 14px; text-align: center;
+    }
+    #join button {
+      padding: 12px 28px; font-size: 16px; font-weight: 700; border: none; border-radius: 10px;
+      background: #35d07f; color: #06331b; cursor: pointer;
+    }
+    #hint { position: fixed; bottom: 12px; left: 0; right: 0; text-align: center; color: #eafff0; opacity: .5; font-size: 13px; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="hud">
+    <div id="score"><span class="red">0</span> — <span class="blue">0</span></div>
+  </div>
+  <div id="banner"></div>
+  <div id="hint">WASD / flechas para moverte · Espacio para patear</div>
+
+  <div id="join">
+    <div class="card">
+      <h1>⚽ Nevra Ball</h1>
+      <p>Escribí tu nombre y a la cancha.</p>
+      <input id="name" maxlength="16" placeholder="Tu nombre" autocomplete="off" />
+      <button id="joinBtn">Jugar</button>
+    </div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "nevra-ball",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "server": "node server/index.js",
+    "start": "vite build && node server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "three": "^0.160.0",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
