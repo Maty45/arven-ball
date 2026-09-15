@@ -103,4 +103,24 @@ const HALF_L = FIELD.LENGTH / 2;
   assert.strictEqual(g.started, true);
 }
 
+// 9) Fin por tiempo: al llegar el reloj a 0 gana el que va arriba.
+{
+  const g = createGame(); g.started = true;
+  g.score.red = 2; g.score.blue = 1;
+  g.clock = 20; // ms: se acaba en el próximo tick
+  tick(g, 1000);
+  assert.strictEqual(g.phase, 'result', 'a tiempo 0 -> resultado');
+  assert.strictEqual(g.winner, 'red', 'gana el que va arriba');
+}
+
+// 10) Colisión jugador-jugador: superpuestos, se separan.
+{
+  const g = createGame(); g.started = true;
+  const a = addPlayer(g, 'a', 'A'), b = addPlayer(g, 'b', 'B');
+  a.x = 0; a.z = 0; b.x = 0.5; b.z = 0; // muy encimados
+  tick(g, 1000);
+  const d = Math.hypot(b.x - a.x, b.z - a.z);
+  assert.ok(d > 1.5, 'los jugadores se separan al colisionar');
+}
+
 console.log('game.test.js OK');

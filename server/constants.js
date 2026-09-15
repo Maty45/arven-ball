@@ -25,6 +25,7 @@ export const BALL = {
 
 export const RULES = {
   GOALS_TO_WIN: 5,
+  MATCH_SECONDS: 300, // duración del partido (gana el que va arriba al terminar)
   TICK_HZ: 30,
   GOAL_FREEZE_MS: 2800, // cooldown/festejo tras un gol antes del próximo saque
   RESULT_FREEZE_MS: 4000, // cuánto se muestra el resultado antes de reset

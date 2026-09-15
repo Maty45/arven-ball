@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createScene, makeAvatar, makeBallMesh, loadPlayerModel, makeConfetti } from './scene.js';
+import { createScene, makeAvatar, makeBallMesh, loadPlayerModel, makeConfetti, makeShadow } from './scene.js';
 import { BALL } from '../server/constants.js';
 import { connect } from './net.js';
 
@@ -8,6 +8,8 @@ const INTERP_DELAY = 100; // ms de retraso para interpolar entre snapshots
 const { scene, camera, renderer } = createScene(document.getElementById('app'));
 const ballMesh = makeBallMesh();
 scene.add(ballMesh);
+const ballShadow = makeShadow(BALL.RADIUS * 1.3);
+scene.add(ballShadow);
 const confetti = makeConfetti(scene);
 
 // Para hacer rodar la pelota según cuánto se desplazó.
@@ -118,8 +120,17 @@ function renderLobby(state) {
 }
 
 // --- HUD ---
-const scoreEl = document.getElementById('score');
+const redNameEl = document.getElementById('redName');
+const blueNameEl = document.getElementById('blueName');
+const redScoreEl = document.getElementById('redScore');
+const blueScoreEl = document.getElementById('blueScore');
+const clockEl = document.getElementById('clock');
 const bannerEl = document.getElementById('banner');
+
+function fmtClock(sec) {
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
 
 // Interpolación de ángulo por el camino corto.
 function lerpAngle(a, b, t) {
@@ -138,17 +149,23 @@ function setAction(entry, name) {
   entry.current = name;
 }
 
-// Reconstruye el estado interpolado a mostrar este frame.
+// Reconstruye el estado interpolado a mostrar este frame: busca el par de snapshots
+// que rodea (now - INTERP_DELAY) e interpola entre ellos -> movimiento suave.
 function interpolatedState() {
   const buf = net.buffer;
   if (buf.length === 0) return null;
-  if (buf.length === 1) return { state: buf[0].state, prev: buf[0].state, alpha: 1 };
-  const [a, b] = buf;
-  const span = Math.max(1, b.recvAt - a.recvAt);
   const renderAt = performance.now() - INTERP_DELAY;
-  let alpha = (renderAt - a.recvAt) / span;
-  alpha = Math.max(0, Math.min(1, alpha));
-  return { state: b.state, prev: a.state, alpha };
+  const first = buf[0], last = buf[buf.length - 1];
+  if (renderAt <= first.recvAt) return { state: first.state, prev: first.state, alpha: 0 };
+  if (renderAt >= last.recvAt) return { state: last.state, prev: last.state, alpha: 1 };
+  for (let i = 0; i < buf.length - 1; i++) {
+    const a = buf[i], b = buf[i + 1];
+    if (renderAt >= a.recvAt && renderAt <= b.recvAt) {
+      const span = Math.max(1, b.recvAt - a.recvAt);
+      return { state: b.state, prev: a.state, alpha: (renderAt - a.recvAt) / span };
+    }
+  }
+  return { state: last.state, prev: last.state, alpha: 1 };
 }
 
 function tickRender() {
@@ -207,6 +224,7 @@ function tickRender() {
   const bx = prev.ball.x + (state.ball.x - prev.ball.x) * alpha;
   const bz = prev.ball.z + (state.ball.z - prev.ball.z) * alpha;
   ballMesh.position.set(bx, BALL.RADIUS, bz);
+  ballShadow.position.set(bx, 0.04, bz);
   if (lastBall) {
     const dx = bx - lastBall.x, dz = bz - lastBall.z;
     const d = Math.hypot(dx, dz);
@@ -266,15 +284,19 @@ function tickRender() {
   // Lobby (visible hasta iniciar la partida)
   renderLobby(state);
 
-  // HUD
-  scoreEl.innerHTML = `<span class="red">${state.score.red}</span> — <span class="blue">${state.score.blue}</span>`;
+  // HUD: nombres, marcador y reloj.
+  const names = state.teamNames || { red: 'Rojo', blue: 'Azul' };
+  redNameEl.textContent = names.red;
+  blueNameEl.textContent = names.blue;
+  redScoreEl.textContent = state.score.red;
+  blueScoreEl.textContent = state.score.blue;
+  clockEl.textContent = fmtClock(state.clock ?? 0);
+
   if (state.phase === 'result') {
-    const w = state.winner === 'red' ? 'ROJO' : 'AZUL';
-    bannerEl.textContent = `¡Gana ${w}!`;
+    bannerEl.textContent = state.winner ? `¡Gana ${names[state.winner]}!` : '¡Empate!';
     bannerEl.style.display = 'grid';
   } else if (state.phase === 'goal') {
-    const s = state.scorer === 'red' ? 'ROJO' : 'AZUL';
-    bannerEl.textContent = `¡GOL ${s}!`;
+    bannerEl.textContent = `¡GOL de ${names[state.scorer]}!`;
     bannerEl.style.display = 'grid';
   } else {
     bannerEl.style.display = 'none';

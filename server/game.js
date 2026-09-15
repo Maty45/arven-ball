@@ -5,6 +5,31 @@ const HALF_L = FIELD.LENGTH / 2;
 const HALF_W = FIELD.WIDTH / 2;
 const HALF_GOAL = FIELD.GOAL_WIDTH / 2;
 
+// Nombres de equipo random con temática de programación.
+const TEAM_NAMES = [
+  'Vibecoder Deportivo Club', 'Los Merge Conflicts', 'Deportivo Null Pointer',
+  'Racing de Stack Overflow', 'Segfault United', 'Los Kernel Panic',
+  'Atlético Rubber Duck', 'Ctrl+Z Fútbol Club', 'Los Off-by-One',
+  'Boca Syntax Error', 'Real Localhost', 'Los Infinite Loop',
+  'Deportivo 404', 'Los Git Blame', 'Sudo Fútbol Club', 'Los Race Condition',
+];
+
+function pickTeamNames() {
+  const i = Math.floor(Math.random() * TEAM_NAMES.length);
+  let j = Math.floor(Math.random() * TEAM_NAMES.length);
+  if (j === i) j = (j + 1) % TEAM_NAMES.length;
+  return { red: TEAM_NAMES[i], blue: TEAM_NAMES[j] };
+}
+
+// Arranca un partido nuevo: marcador, reloj, nombres y formación reseteados.
+function newMatch(game) {
+  game.score.red = 0; game.score.blue = 0;
+  game.clock = RULES.MATCH_SECONDS * 1000; // ms restantes
+  game.teamNames = pickTeamNames();
+  game.phase = 'play'; game.winner = null; game.scorer = null;
+  resetPositions(game);
+}
+
 function clampSpeed(vx, vz, max) {
   const s = Math.hypot(vx, vz);
   if (s > max) {
@@ -15,10 +40,12 @@ function clampSpeed(vx, vz, max) {
 }
 
 export function createGame() {
-  return {
+  const game = {
     players: new Map(), // id -> { id, name, team, x, z, vx, vz, facing, input }
     ball: { x: 0, z: 0, vx: 0, vz: 0 },
     score: { red: 0, blue: 0 },
+    clock: RULES.MATCH_SECONDS * 1000, // ms restantes del partido
+    teamNames: pickTeamNames(),
     started: false, // lobby: no arranca hasta que alguien confirme
     // fase de juego: 'play' | 'goal' (cooldown/festejo) | 'result'
     phase: 'play',
@@ -27,6 +54,7 @@ export function createGame() {
     goalUntil: 0,
     resultUntil: 0,
   };
+  return game;
 }
 
 export function addPlayer(game, id, name) {
@@ -54,12 +82,10 @@ export function addPlayer(game, id, name) {
 
 export function removePlayer(game, id) {
   game.players.delete(id);
-  // Sala vacía -> volver al lobby (la próxima persona espera y confirma de nuevo).
+  // Sala vacía -> volver al lobby con un partido nuevo listo para empezar.
   if (game.players.size === 0) {
     game.started = false;
-    game.score.red = 0; game.score.blue = 0;
-    game.phase = 'play'; game.winner = null; game.scorer = null;
-    resetPositions(game); // pelota al centro (si no, queda donde la dejaron)
+    newMatch(game);
   }
 }
 
@@ -78,7 +104,7 @@ export function setReady(game, id, ready) {
 export function tryStart(game, id) {
   if (id !== hostId(game) || game.players.size === 0) return false;
   for (const p of game.players.values()) if (!p.ready) return false;
-  resetPositions(game); // saque desde el centro, formación limpia
+  newMatch(game); // partido nuevo: marcador, reloj, nombres y formación
   game.started = true;
   return true;
 }
@@ -112,12 +138,7 @@ export function tick(game, now) {
   if (!game.started) return; // en el lobby está todo congelado
 
   if (game.phase === 'result') {
-    if (now >= game.resultUntil) {
-      game.score.red = 0; game.score.blue = 0;
-      game.winner = null;
-      game.phase = 'play';
-      resetPositions(game);
-    }
+    if (now >= game.resultUntil) newMatch(game); // arranca otro partido
     return; // congelado durante el resultado
   }
 
@@ -130,6 +151,17 @@ export function tick(game, now) {
   }
 
   const dt = TICK_DT;
+
+  // --- Reloj del partido: corre sólo en juego; a 0 gana el que va arriba ---
+  game.clock -= dt * 1000;
+  if (game.clock <= 0) {
+    game.clock = 0;
+    game.phase = 'result';
+    game.winner = game.score.red > game.score.blue ? 'red'
+      : game.score.blue > game.score.red ? 'blue' : null; // null = empate
+    game.resultUntil = now + RULES.RESULT_FREEZE_MS;
+    return;
+  }
 
   // --- Jugadores: aceleración hacia el input, fricción, tope de velocidad ---
   for (const p of game.players.values()) {
@@ -153,6 +185,22 @@ export function tick(game, now) {
     // Confinar al campo (los jugadores no salen).
     p.x = Math.max(-HALF_L + PLAYER.RADIUS, Math.min(HALF_L - PLAYER.RADIUS, p.x));
     p.z = Math.max(-HALF_W + PLAYER.RADIUS, Math.min(HALF_W - PLAYER.RADIUS, p.z));
+  }
+
+  // --- Colisión jugador-jugador: se empujan, no se atraviesan (O(n²), pocos jugadores) ---
+  const ps = [...game.players.values()];
+  const minPP = 2 * PLAYER.RADIUS;
+  for (let i = 0; i < ps.length; i++) {
+    for (let j = i + 1; j < ps.length; j++) {
+      const a = ps[i], b = ps[j];
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const d = Math.hypot(dx, dz) || 0.0001;
+      if (d < minPP) {
+        const nx = dx / d, nz = dz / d, push = (minPP - d) / 2;
+        a.x -= nx * push; a.z -= nz * push;
+        b.x += nx * push; b.z += nz * push;
+      }
+    }
   }
 
   // --- Pelota: fricción de rodadura ---
@@ -238,6 +286,8 @@ export function snapshot(game) {
     players,
     ball: { x: +game.ball.x.toFixed(2), z: +game.ball.z.toFixed(2) },
     score: game.score,
+    clock: Math.max(0, Math.ceil(game.clock / 1000)), // segundos restantes
+    teamNames: game.teamNames,
     started: game.started,
     hostId: hostId(game),
     phase: game.phase,

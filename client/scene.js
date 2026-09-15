@@ -220,23 +220,44 @@ function addLines(scene) {
   const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 });
   const hl = FIELD.LENGTH / 2, hw = FIELD.WIDTH / 2;
   const y = 0.02;
-  const pts = [
-    // perímetro
-    [-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw], [-hl, -hw],
-  ].map(([x, z]) => new THREE.Vector3(x, y, z));
-  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+  const line = (pts2d) => scene.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts2d.map(([x, z]) => new THREE.Vector3(x, y, z))), mat));
 
-  // línea de medio campo
-  const mid = [new THREE.Vector3(0, y, -hw), new THREE.Vector3(0, y, hw)];
-  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(mid), mat));
+  // perímetro + línea de medio campo
+  line([[-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw], [-hl, -hw]]);
+  line([[0, -hw], [0, hw]]);
 
   // círculo central
   const circle = [];
-  for (let i = 0; i <= 48; i++) {
-    const a = (i / 48) * Math.PI * 2;
-    circle.push(new THREE.Vector3(Math.cos(a) * 6, y, Math.sin(a) * 6));
+  for (let i = 0; i <= 48; i++) { const a = (i / 48) * Math.PI * 2; circle.push([Math.cos(a) * 10, Math.sin(a) * 10]); }
+  line(circle);
+
+  // Áreas por arco: grande, chica, punto de penal y arco frontal.
+  const PA_D = 22, PA_W = 66;   // área grande: profundidad y ancho (Z)
+  const GA_D = 9, GA_W = 42;    // área chica
+  const SPOT = 15;             // distancia del punto de penal a la línea de gol
+  const ARC_R = 14;
+  for (const dir of [-1, 1]) {
+    const gx = dir * hl; // línea de gol
+    // área grande (3 lados; el 4to es la línea de gol)
+    line([[gx, -PA_W / 2], [gx - dir * PA_D, -PA_W / 2], [gx - dir * PA_D, PA_W / 2], [gx, PA_W / 2]]);
+    // área chica
+    line([[gx, -GA_W / 2], [gx - dir * GA_D, -GA_W / 2], [gx - dir * GA_D, GA_W / 2], [gx, GA_W / 2]]);
+    // punto de penal (círculo chico)
+    const sx = gx - dir * SPOT;
+    const spot = [];
+    for (let i = 0; i <= 16; i++) { const a = (i / 16) * Math.PI * 2; spot.push([sx + Math.cos(a) * 0.7, Math.sin(a) * 0.7]); }
+    line(spot);
+    // arco frontal del área (sólo la parte fuera del área grande)
+    const cosLim = (PA_D - SPOT) / ARC_R; // límite donde el arco sale del área
+    const half = Math.acos(Math.max(-1, Math.min(1, cosLim)));
+    const arc = [];
+    for (let i = 0; i <= 24; i++) {
+      const t = -half + (2 * half) * (i / 24);
+      arc.push([sx - dir * ARC_R * Math.cos(t), ARC_R * Math.sin(t)]);
+    }
+    line(arc);
   }
-  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(circle), mat));
 }
 
 function addGoals(scene) {
@@ -255,7 +276,30 @@ function addGoals(scene) {
     bar.rotation.x = Math.PI / 2;
     bar.position.set(dir * hl, H, 0);
     scene.add(bar);
+
+    // malla (red): fondo + techo + laterales, translúcida.
+    const netMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, side: THREE.DoubleSide });
+    const nd = 7; // profundidad de la red hacia afuera
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(FIELD.GOAL_WIDTH, H), netMat);
+    back.rotation.y = Math.PI / 2; back.position.set(dir * (hl + nd), H / 2, 0); scene.add(back);
+    const top = new THREE.Mesh(new THREE.PlaneGeometry(nd, FIELD.GOAL_WIDTH), netMat);
+    top.rotation.x = Math.PI / 2; top.position.set(dir * (hl + nd / 2), H, 0); scene.add(top);
+    for (const z of [-hg, hg]) {
+      const side = new THREE.Mesh(new THREE.PlaneGeometry(nd, H), netMat);
+      side.position.set(dir * (hl + nd / 2), H / 2, z); scene.add(side);
+    }
   }
+}
+
+// Sombra falsa: disco oscuro translúcido en el piso (barato, sin shadow maps).
+export function makeShadow(radius) {
+  const s = new THREE.Mesh(
+    new THREE.CircleGeometry(radius, 20),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false })
+  );
+  s.rotation.x = -Math.PI / 2;
+  s.position.y = 0.04;
+  return s;
 }
 
 // Carga el GLB del jugador una vez. Devuelve { scene, animations } o null si falla.
@@ -301,6 +345,7 @@ function makeNameTag(name) {
 // showTag: mostrar el nombre encima (típicamente los otros jugadores, no uno mismo).
 export function makeAvatar(template, team, name, showTag) {
   const group = new THREE.Group();
+  group.add(makeShadow(1.6));  // sombra bajo los pies
   group.add(teamDisc(team)); // marca de equipo bajo los pies (siempre visible)
   if (showTag && name) group.add(makeNameTag(name));
 

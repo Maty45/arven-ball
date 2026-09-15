@@ -10,19 +10,34 @@
     #app { position: fixed; inset: 0; }
     #hud {
       position: fixed; top: 12px; left: 0; right: 0;
-      display: flex; justify-content: center; gap: 16px;
+      display: flex; justify-content: center;
       pointer-events: none; user-select: none;
     }
-    #score {
-      background: rgba(0,0,0,.5); color: #fff; padding: 8px 18px; border-radius: 10px;
-      font-size: 26px; font-weight: 700; letter-spacing: 1px;
+    #scoreboard {
+      display: flex; align-items: stretch; border-radius: 12px; overflow: hidden;
+      box-shadow: 0 4px 18px rgba(0,0,0,.4); font-weight: 800;
+      background: rgba(10,16,22,.82); backdrop-filter: blur(4px);
     }
-    #score .red { color: #ff5a5a; }
-    #score .blue { color: #5a9dff; }
+    #scoreboard .tname {
+      display: flex; align-items: center; padding: 0 16px; font-size: 15px;
+      white-space: nowrap; color: #fff;
+    }
+    #scoreboard .tname.red { background: linear-gradient(180deg,#e24b4b,#b83232); }
+    #scoreboard .tname.blue { background: linear-gradient(180deg,#4b83e2,#3260b8); }
+    #scoreboard .nums {
+      display: flex; align-items: center; gap: 14px; padding: 8px 18px; color: #fff;
+    }
+    #scoreboard .nums b { font-size: 30px; min-width: 24px; text-align: center; }
+    #scoreboard .nums b.red { color: #ff7a7a; }
+    #scoreboard .nums b.blue { color: #86b6ff; }
+    #clock {
+      font-size: 18px; font-variant-numeric: tabular-nums; letter-spacing: 1px;
+      background: rgba(255,255,255,.1); padding: 4px 10px; border-radius: 8px; min-width: 58px; text-align: center;
+    }
     #banner {
       position: fixed; inset: 0; display: none; place-items: center;
-      background: rgba(0,0,0,.55); color: #fff; font-size: 42px; font-weight: 800;
-      text-align: center; pointer-events: none;
+      background: rgba(0,0,0,.55); color: #fff; font-size: 40px; font-weight: 800;
+      text-align: center; padding: 0 24px; pointer-events: none;
     }
     #join {
       position: fixed; inset: 0; display: grid; place-items: center;
@@ -67,7 +82,11 @@
   <div id="app"></div>
 
   <div id="hud">
-    <div id="score"><span class="red">0</span> — <span class="blue">0</span></div>
+    <div id="scoreboard">
+      <span class="tname red" id="redName">—</span>
+      <span class="nums"><b class="red" id="redScore">0</b><span id="clock">5:00</span><b class="blue" id="blueScore">0</b></span>
+      <span class="tname blue" id="blueName">—</span>
+    </div>
   </div>
   <div id="banner"></div>
   <div id="hint">WASD / flechas para moverte · Espacio para patear</div>

@@ -3,7 +3,7 @@ export function connect({ name, onWelcome }) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
-  // Buffer de snapshots (guardamos 2 para interpolar entre ellos).
+  // Buffer de snapshots (guardamos ~0.5s de historia para interpolar suave).
   const buffer = []; // [{ recvAt, state }]
   let myId = null;
 
@@ -18,7 +18,7 @@ export function connect({ name, onWelcome }) {
       onWelcome?.(msg);
     } else if (msg.t === 'state') {
       buffer.push({ recvAt: performance.now(), state: msg });
-      if (buffer.length > 2) buffer.shift();
+      if (buffer.length > 16) buffer.shift();
     }
   });
 
