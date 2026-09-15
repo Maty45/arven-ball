@@ -84,6 +84,9 @@ function doJoin() {
 
 // --- Lobby ---
 const lobbyEl = document.getElementById('lobby');
+// El nombre lo elige el jugador y se inyecta en innerHTML → escapar para no permitir
+// inyección de HTML/markup en la lista del lobby de los demás.
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const lobbyList = document.getElementById('lobbyList');
 const readyBtn = document.getElementById('readyBtn');
 const startBtn = document.getElementById('startBtn');
@@ -105,7 +108,7 @@ function renderLobby(state) {
     const you = p.id === net.myId ? ' (vos)' : '';
     const host = p.id === state.hostId ? ' 👑' : '';
     const st = p.r ? '<span class="st ok">✓ listo</span>' : '<span class="st">esperando</span>';
-    return `<li><span class="dot ${p.team}"></span>${p.name}${you}${host}${st}</li>`;
+    return `<li><span class="dot ${p.team}"></span>${esc(p.name)}${you}${host}${st}</li>`;
   }).join('') || '<li>Conectando…</li>';
 
   readyBtn.textContent = myReady ? '✓ Listo (cancelar)' : 'Marcar listo';
