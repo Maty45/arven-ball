@@ -340,8 +340,100 @@ function makeNameTag(name) {
   return sprite;
 }
 
+// Patada por IK de 2 huesos. El rig es IK: Foot.R (donde está el zapato) NO cuelga
+// de la tibia, sino de la raíz. Así que movemos el control del pie a la posición de
+// la patada y doblamos muslo/tibia para alcanzarlo (el glTF no trae solver de IK).
+// Plano sagital: adelante = +Z, arriba = +Y (el modelo mira +Z).
+const KICK = {
+  dur: 0.5,
+  times: [0, 0.14, 0.28, 0.5],
+  // Posición objetivo del tobillo por keyframe, relativa a la cadera: [fwd, up, alcance]
+  // donde alcance = fracción de (muslo+tibia). null = bind pose.
+  foot: [null, [-0.35, -0.94, 0.98], [0.98, 0.20, 0.92], null], // amaga atrás-abajo, golpea adelante
+  kneeLead: 1, // signo del doblez de rodilla; si apunta al revés, poner -1
+};
+
+// Construye el AnimationClip 'Kick' resolviendo IK de 2 huesos por keyframe y leyendo
+// las transformaciones locales resultantes. Se calcula una vez y se cachea en template.
+export function buildKickClip(template) {
+  const root = template.scene;
+  // GLTFLoader sanitiza los nombres (UpperLeg.R -> UpperLegR): buscamos ignorando
+  // puntos/guiones/mayúsculas. Sin exigir isBone: los tips `_end` (LowerLeg.R_end,
+  // Foot.R_end) no están en skin.joints, así que GLTFLoader los crea como Object3D.
+  const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const findBone = (t) => { let h = null; root.traverse((o) => { if (!h && norm(o.name) === t) h = o; }); return h; };
+  const hip = findBone('upperlegr'), knee = findBone('lowerlegr'), ankle = findBone('lowerlegrend');
+  const foot = findBone('footr'), toe = findBone('footrend');
+  if (!hip || !knee || !ankle || !foot) return null;
+
+  root.updateMatrixWorld(true);
+  const P = (b) => b.getWorldPosition(new THREE.Vector3());
+  const pHip = P(hip);
+  const L1 = P(knee).distanceTo(pHip), L2 = P(ankle).distanceTo(P(knee)); // largos muslo/tibia
+  const reach = L1 + L2;
+  const F = new THREE.Vector3(0, 0, 1), U = new THREE.Vector3(0, 1, 0);
+
+  // bind (para resetear entre keyframes y no dejar el template posado)
+  const bindQ = { hip: hip.quaternion.clone(), knee: knee.quaternion.clone(), foot: foot.quaternion.clone() };
+  const bindFootPos = foot.position.clone();
+
+  // Orienta un hueso para que el vector hueso→hijo apunte a worldDir (unit).
+  const pointAt = (bone, child, worldDir) => {
+    root.updateMatrixWorld(true);
+    const cur = P(child).sub(P(bone)).normalize();
+    const delta = new THREE.Quaternion().setFromUnitVectors(cur, worldDir);
+    const desired = delta.multiply(bone.getWorldQuaternion(new THREE.Quaternion()));
+    const pInv = bone.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+    bone.quaternion.copy(pInv.multiply(desired));
+    bone.updateMatrixWorld(true);
+  };
+
+  // Resuelve el triángulo cadera-rodilla-tobillo para un objetivo [fwd,up,frac].
+  const solve = (spec) => {
+    const dir = new THREE.Vector3().addScaledVector(F, spec[0]).addScaledVector(U, spec[1]).normalize();
+    const d = Math.min(reach * spec[2], reach * 0.999); // distancia cadera→tobillo (evita singularidad)
+    const target = pHip.clone().addScaledVector(dir, d);
+    const base = Math.atan2(dir.dot(U), dir.dot(F)); // ángulo de la línea cadera→objetivo
+    const cosB = Math.max(-1, Math.min(1, (L1 * L1 + d * d - L2 * L2) / (2 * L1 * d)));
+    const thighAng = base + Math.acos(cosB) * KICK.kneeLead;
+    const thighDir = new THREE.Vector3(0, Math.sin(thighAng), Math.cos(thighAng));
+    const kneePos = pHip.clone().addScaledVector(thighDir, L1);
+    return { thighDir, shinDir: target.clone().sub(kneePos).normalize(), target };
+  };
+
+  const hipV = [], kneeV = [], footV = [], footP = [];
+  for (const spec of KICK.foot) {
+    hip.quaternion.copy(bindQ.hip); knee.quaternion.copy(bindQ.knee);
+    foot.quaternion.copy(bindQ.foot); foot.position.copy(bindFootPos);
+    root.updateMatrixWorld(true);
+    if (spec) {
+      const { thighDir, shinDir, target } = solve(spec);
+      pointAt(hip, knee, thighDir);
+      pointAt(knee, ankle, shinDir);
+      foot.position.copy(foot.parent.worldToLocal(target.clone())); // control del pie al tobillo
+      foot.updateMatrixWorld(true);
+      if (toe) pointAt(foot, toe, shinDir); // la punta sigue la línea de la tibia
+    }
+    hipV.push(hip.quaternion.x, hip.quaternion.y, hip.quaternion.z, hip.quaternion.w);
+    kneeV.push(knee.quaternion.x, knee.quaternion.y, knee.quaternion.z, knee.quaternion.w);
+    footV.push(foot.quaternion.x, foot.quaternion.y, foot.quaternion.z, foot.quaternion.w);
+    footP.push(foot.position.x, foot.position.y, foot.position.z);
+  }
+  hip.quaternion.copy(bindQ.hip); knee.quaternion.copy(bindQ.knee);
+  foot.quaternion.copy(bindQ.foot); foot.position.copy(bindFootPos);
+  root.updateMatrixWorld(true);
+
+  const t = KICK.times;
+  return new THREE.AnimationClip('Kick', KICK.dur, [
+    new THREE.QuaternionKeyframeTrack(hip.name + '.quaternion', t, hipV),
+    new THREE.QuaternionKeyframeTrack(knee.name + '.quaternion', t, kneeV),
+    new THREE.QuaternionKeyframeTrack(foot.name + '.quaternion', t, footV),
+    new THREE.VectorKeyframeTrack(foot.name + '.position', t, footP),
+  ]);
+}
+
 // Avatar de un jugador: clona el modelo (o cápsula de fallback) + mixer de animación.
-// Devuelve { obj, mixer, actions } — actions = { idle, run, jump } o null si es cápsula.
+// Devuelve { obj, mixer, actions } — actions = { idle, run, jump, kick } o null si es cápsula.
 // showTag: mostrar el nombre encima (típicamente los otros jugadores, no uno mismo).
 export function makeAvatar(template, team, name, showTag) {
   const group = new THREE.Group();
@@ -387,10 +479,12 @@ export function makeAvatar(template, team, name, showTag) {
     if (loop === 'once') { act.setLoop(THREE.LoopOnce); act.clampWhenFinished = true; }
     return act;
   };
+  if (!template.__kickClip) template.__kickClip = buildKickClip(template);
   const actions = {
     idle: mk(find('idle')),
     run: mk(find('run')),
     jump: mk(find('jump'), 'once'),
+    kick: template.__kickClip ? mk(template.__kickClip, 'once') : null,
   };
   return { obj: group, mixer, actions };
 }

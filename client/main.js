@@ -202,15 +202,16 @@ function tickRender() {
     entry.obj.position.set(x, 0, z);
     entry.obj.rotation.y = -lerpAngle(pp.f, p.f, alpha);
 
-    // Animación: patada (Jump) en flanco de subida, si no correr/idle según movimiento.
+    // Animación: patada en flanco de subida, si no correr/idle según movimiento.
+    const kickName = entry.actions?.kick ? 'kick' : 'jump'; // fallback si no hubo clip
     if (p.k && !entry.lastKick) {
-      const jd = entry.actions?.jump ? entry.actions.jump.getClip().duration : 0.6;
-      entry.jumpUntil = now + jd * 1000;
+      const ka = entry.actions?.[kickName];
+      entry.jumpUntil = now + (ka ? ka.getClip().duration : 0.45) * 1000;
       playKick();
     }
     entry.lastKick = p.k;
     const moving = Math.hypot(p.x - pp.x, p.z - pp.z) > 0.05;
-    setAction(entry, now < entry.jumpUntil ? 'jump' : moving ? 'run' : 'idle');
+    setAction(entry, now < entry.jumpUntil ? kickName : moving ? 'run' : 'idle');
     entry.mixer?.update(dt);
 
     if (p.id === net.myId) { me = { x, z, f: lerpAngle(pp.f, p.f, alpha) }; myEntry = entry; }
