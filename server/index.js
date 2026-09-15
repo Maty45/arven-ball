@@ -52,4 +52,4 @@ setInterval(() => {
   }
 }, 1000 / RULES.TICK_HZ);
 
-server.listen(PORT, () => console.log(`Nevra Ball en http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`Arven Ball en http://localhost:${PORT}`));

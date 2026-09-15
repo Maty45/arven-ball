@@ -1,4 +1,4 @@
-# ⚽ Nevra Ball
+# ⚽ Arven Ball
 
 Fútbol 3D multijugador en el navegador (three.js + WebSocket). Cada quien maneja
 un futbolista en una cancha compartida; primero a 5 goles gana.
