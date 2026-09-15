@@ -9,6 +9,7 @@ const TEAM_COLOR = { red: 0xff5a5a, blue: 0x5a9dff };
 // El armature del GLB ya trae scale x100 → tamaño natural ~humano. Ajustar acá si
 // se ve muy grande/chico (el Box3 no sirve: es skinned, mide la pose de bind).
 const PLAYER_SCALE = 1.35;
+const HEAD_SCALE = 1.8; // cabezones (modo broma); 1 = normal
 const SKIN_COLOR = 0xf3d0b0; // piel clara (el material base viene oscuro)
 // El GLB de Quaternius mira hacia +Z; nuestro "facing" 0 es +X. Este offset alinea
 // el modelo con la dirección de movimiento. Si el jugador corre de costado/espaldas,
@@ -469,6 +470,9 @@ export function makeAvatar(template, team, name, showTag) {
     o.material.metalness = 0;
     o.material.roughness = 0.9;
   });
+  // Cabezones (modo broma): agrandamos el hueso Head; la malla lo sigue por skinning.
+  const head = model.getObjectByName('Head');
+  if (head) head.scale.setScalar(HEAD_SCALE);
   group.add(model);
 
   const mixer = new THREE.AnimationMixer(model);
