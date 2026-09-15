@@ -2,16 +2,16 @@
 // Unidades en "metros" de juego. Cancha centrada en el origen, largo sobre X.
 
 export const FIELD = {
-  LENGTH: 100, // eje X (de arco a arco)
-  WIDTH: 64, // eje Z
-  GOAL_WIDTH: 18, // ancho del arco sobre Z
+  LENGTH: 170, // eje X (de arco a arco)
+  WIDTH: 108, // eje Z
+  GOAL_WIDTH: 26, // ancho del arco sobre Z
   WALL_RESTITUTION: 0.6, // rebote de la pelota contra bordes
 };
 
 export const PLAYER = {
   RADIUS: 1.0,
-  ACCEL: 75, // m/s^2 hacia el input
-  MAX_SPEED: 16, // m/s
+  ACCEL: 90, // m/s^2 hacia el input
+  MAX_SPEED: 22, // m/s (cancha más grande -> un poco más rápido)
   FRICTION: 9, // desaceleración cuando no hay input (m/s^2)
 };
 
@@ -26,6 +26,7 @@ export const BALL = {
 export const RULES = {
   GOALS_TO_WIN: 5,
   TICK_HZ: 30,
+  GOAL_FREEZE_MS: 2800, // cooldown/festejo tras un gol antes del próximo saque
   RESULT_FREEZE_MS: 4000, // cuánto se muestra el resultado antes de reset
 };
 

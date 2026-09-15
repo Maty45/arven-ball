@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { WebSocketServer } from 'ws';
-import { createGame, addPlayer, removePlayer, setInput, tick, snapshot } from './game.js';
+import { createGame, addPlayer, removePlayer, setInput, setReady, tryStart, tick, snapshot } from './game.js';
 import { RULES } from './constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +32,10 @@ wss.on('connection', (ws) => {
       ws.send(JSON.stringify({ t: 'welcome', id, rules: RULES }));
     } else if (msg.t === 'input') {
       setInput(game, id, msg);
+    } else if (msg.t === 'ready') {
+      setReady(game, id, msg.ready);
+    } else if (msg.t === 'start') {
+      tryStart(game, id); // sólo el anfitrión y con todos listos
     }
   });
 

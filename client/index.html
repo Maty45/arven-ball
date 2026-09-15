@@ -40,6 +40,27 @@
       background: #35d07f; color: #06331b; cursor: pointer;
     }
     #hint { position: fixed; bottom: 12px; left: 0; right: 0; text-align: center; color: #eafff0; opacity: .5; font-size: 13px; pointer-events: none; }
+
+    #lobby {
+      position: fixed; inset: 0; display: none; place-items: center;
+      background: rgba(6, 20, 12, .92); z-index: 9;
+    }
+    #lobby .card { background: #12351f; padding: 28px 34px; border-radius: 16px; text-align: center; color: #eafff0; min-width: 300px; }
+    #lobby h2 { font-size: 26px; margin-bottom: 4px; }
+    #lobby .sub { opacity: .6; font-size: 13px; margin-bottom: 16px; }
+    #lobby ul { list-style: none; text-align: left; margin: 0 auto 18px; max-width: 260px; }
+    #lobby li { padding: 7px 12px; margin: 5px 0; border-radius: 8px; background: rgba(255,255,255,.06); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    #lobby li .dot { width: 10px; height: 10px; border-radius: 50%; }
+    #lobby li .dot.red { background: #ff5a5a; } #lobby li .dot.blue { background: #5a9dff; }
+    #lobby li .st { margin-left: auto; font-size: 13px; opacity: .85; }
+    #lobby li .st.ok { color: #43d17f; }
+    #lobby .btns { display: flex; gap: 10px; justify-content: center; }
+    #lobby button { padding: 12px 24px; font-size: 15px; font-weight: 700; border: none; border-radius: 10px; cursor: pointer; }
+    #readyBtn { background: #2b6cff; color: #fff; }
+    #readyBtn.on { background: #43d17f; color: #06331b; }
+    #startBtn { background: #35d07f; color: #06331b; }
+    #startBtn:disabled { background: #2a3b31; color: #6a7b70; cursor: not-allowed; }
+    #lobbyHint { opacity: .6; font-size: 13px; margin-top: 12px; }
   </style>
 </head>
 <body>
@@ -57,6 +78,19 @@
       <p>Escribí tu nombre y a la cancha.</p>
       <input id="name" maxlength="16" placeholder="Tu nombre" autocomplete="off" />
       <button id="joinBtn">Jugar</button>
+    </div>
+  </div>
+
+  <div id="lobby">
+    <div class="card">
+      <h2>Sala de espera</h2>
+      <div class="sub">Marcá "Listo". El anfitrión inicia cuando estén todos.</div>
+      <ul id="lobbyList"></ul>
+      <div class="btns">
+        <button id="readyBtn">Marcar listo</button>
+        <button id="startBtn">Iniciar partida</button>
+      </div>
+      <div id="lobbyHint"></div>
     </div>
   </div>
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { createScene, makeAvatar, makeBallMesh, loadPlayerModel } from './scene.js';
+import { createScene, makeAvatar, makeBallMesh, loadPlayerModel, makeConfetti } from './scene.js';
+import { BALL } from '../server/constants.js';
 import { connect } from './net.js';
 
 const INTERP_DELAY = 100; // ms de retraso para interpolar entre snapshots
@@ -7,6 +8,12 @@ const INTERP_DELAY = 100; // ms de retraso para interpolar entre snapshots
 const { scene, camera, renderer } = createScene(document.getElementById('app'));
 const ballMesh = makeBallMesh();
 scene.add(ballMesh);
+const confetti = makeConfetti(scene);
+
+// Para hacer rodar la pelota según cuánto se desplazó.
+let lastBall = null;
+const ROLL_AXIS = new THREE.Vector3();
+let confettiTimer = 0; // ráfagas ambientales cada tanto
 
 // id -> { obj, mixer, actions, current, lastKick, jumpUntil }
 const players = new Map();
@@ -20,6 +27,24 @@ loadPlayerModel().then((t) => { playerTemplate = t; });
 const kickSound = new Audio('/sounds/kick.ogg');
 kickSound.volume = 0.35;
 function playKick() { const s = kickSound.cloneNode(); s.volume = 0.35; s.play().catch(() => {}); }
+
+// Sonido de gol/festejo sintetizado con WebAudio (sin descargar assets).
+let actx = null;
+function audioCtx() { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); return actx; }
+function tone(freq, start, dur, gain = 0.18, type = 'square') {
+  const a = audioCtx(), o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.value = freq; o.connect(g); g.connect(a.destination);
+  const t = a.currentTime + start;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(gain, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.start(t); o.stop(t + dur);
+}
+// Arpegio ascendente + remate: suena a festejo de gol.
+function playGoal() {
+  [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.11, 0.28));
+  tone(1319, 0.44, 0.5, 0.16, 'triangle');
+}
 
 // --- Input ---
 const keys = new Set();
@@ -39,6 +64,7 @@ function readKeys() {
 // Yaw de la cámara: sigue el rumbo del jugador con suavizado (no salta).
 let camYaw = null;
 let lastT = null;
+let prevPhase = 'play'; // para disparar el sonido de gol una sola vez por transición
 
 // --- Join ---
 const joinEl = document.getElementById('join');
@@ -48,8 +74,47 @@ nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') doJoin(); });
 
 function doJoin() {
   const name = (nameEl.value || 'anon').trim().slice(0, 16);
+  audioCtx().resume().catch(() => {}); // desbloquear audio con el gesto del click
   net = connect({ name });
   joinEl.style.display = 'none';
+  lobbyEl.style.display = 'grid'; // esperar en el lobby hasta iniciar
+}
+
+// --- Lobby ---
+const lobbyEl = document.getElementById('lobby');
+const lobbyList = document.getElementById('lobbyList');
+const readyBtn = document.getElementById('readyBtn');
+const startBtn = document.getElementById('startBtn');
+const lobbyHint = document.getElementById('lobbyHint');
+let myReady = false;
+readyBtn.addEventListener('click', () => net?.ready(!myReady));
+startBtn.addEventListener('click', () => net?.start());
+
+function renderLobby(state) {
+  if (state.started) { lobbyEl.style.display = 'none'; return; }
+  lobbyEl.style.display = 'grid';
+
+  const me = state.players.find((p) => p.id === net.myId);
+  myReady = !!me?.r;
+  const isHost = net.myId === state.hostId;
+  const allReady = state.players.length > 0 && state.players.every((p) => p.r);
+
+  lobbyList.innerHTML = state.players.map((p) => {
+    const you = p.id === net.myId ? ' (vos)' : '';
+    const host = p.id === state.hostId ? ' 👑' : '';
+    const st = p.r ? '<span class="st ok">✓ listo</span>' : '<span class="st">esperando</span>';
+    return `<li><span class="dot ${p.team}"></span>${p.name}${you}${host}${st}</li>`;
+  }).join('') || '<li>Conectando…</li>';
+
+  readyBtn.textContent = myReady ? '✓ Listo (cancelar)' : 'Marcar listo';
+  readyBtn.classList.toggle('on', myReady);
+
+  startBtn.style.display = isHost ? '' : 'none';
+  startBtn.disabled = !allReady;
+
+  lobbyHint.textContent = isHost
+    ? (allReady ? 'Todos listos — ¡dale Iniciar!' : 'Esperá a que todos marquen "Listo".')
+    : (allReady ? 'Todos listos — esperando al anfitrión 👑' : 'Marcá que estás listo.');
 }
 
 // --- HUD ---
@@ -109,7 +174,7 @@ function tickRender() {
     seen.add(p.id);
     let entry = players.get(p.id);
     if (!entry) {
-      entry = makeAvatar(playerTemplate, p.team); // { obj, mixer, actions }
+      entry = makeAvatar(playerTemplate, p.team, p.name, p.id !== net.myId); // { obj, mixer, actions }
       entry.current = null; entry.lastKick = false; entry.jumpUntil = 0;
       scene.add(entry.obj);
       players.set(p.id, entry);
@@ -138,22 +203,32 @@ function tickRender() {
     if (!seen.has(id)) { scene.remove(entry.obj); players.delete(id); }
   }
 
-  // pelota
+  // pelota: posición interpolada + rodar según el desplazamiento.
   const bx = prev.ball.x + (state.ball.x - prev.ball.x) * alpha;
   const bz = prev.ball.z + (state.ball.z - prev.ball.z) * alpha;
-  ballMesh.position.set(bx, 0.6, bz);
+  ballMesh.position.set(bx, BALL.RADIUS, bz);
+  if (lastBall) {
+    const dx = bx - lastBall.x, dz = bz - lastBall.z;
+    const d = Math.hypot(dx, dz);
+    if (d > 1e-4) {
+      // eje de giro = horizontal, perpendicular al movimiento (up × mov).
+      ROLL_AXIS.set(dz, 0, -dx).normalize();
+      ballMesh.rotateOnWorldAxis(ROLL_AXIS, d / BALL.RADIUS);
+    }
+  }
+  lastBall = { x: bx, z: bz };
+
+  // Confeti: ráfagas ambientales cada ~5s + update del sistema.
+  confettiTimer -= dt;
+  if (confettiTimer <= 0) { confetti.burst(50); confettiTimer = 4 + Math.random() * 3; }
+  confetti.update(dt);
 
   // cámara chase detrás del propio jugador (o vista aérea si aún no aparecí)
   if (me) {
-    // El yaw persigue el rumbo del jugador, suave (constante de tiempo ~0.38s).
     if (camYaw === null) camYaw = me.f;
-    else camYaw = lerpAngle(camYaw, me.f, 1 - Math.exp(-dt / 0.38));
 
     const fx = Math.cos(camYaw), fz = Math.sin(camYaw); // "adelante" de la cámara
     const rx = -fz, rz = fx;                             // "derecha" de la cámara
-
-    // El jugador local mira igual que la cámara (no salta).
-    myEntry.obj.rotation.y = -camYaw;
 
     // Input relativo a la cámara: W siempre es hacia adentro de la pantalla.
     const k = readKeys();
@@ -163,19 +238,43 @@ function tickRender() {
     if (len > 1) { mx /= len; mz /= len; }
     net.sendInput(mx, mz, k.kick);
 
-    const camPos = new THREE.Vector3(me.x - fx * 20, 15, me.z - fz * 20);
+    // La cámara gira hacia el rumbo SOLO si hay avance (fwd>=0). Con S sola no gira:
+    // el jugador retrocede y la cámara sigue apuntando adelante.
+    if (len > 0.01 && k.fwd >= 0) {
+      camYaw = lerpAngle(camYaw, Math.atan2(mz, mx), 1 - Math.exp(-dt / 0.38));
+    }
+
+    // El jugador local mira igual que la cámara.
+    myEntry.obj.rotation.y = -camYaw;
+
+    const nfx = Math.cos(camYaw), nfz = Math.sin(camYaw);
+    const camPos = new THREE.Vector3(me.x - nfx * 20, 15, me.z - nfz * 20);
     camera.position.lerp(camPos, 1 - Math.exp(-dt / 0.12));
-    camera.lookAt(me.x + fx * 8, 1, me.z + fz * 8);
+    camera.lookAt(me.x + nfx * 8, 1, me.z + nfz * 8);
   } else {
     camera.position.set(0, 55, 0.01);
     camera.lookAt(0, 0, 0);
   }
+
+  // Gol: sonar + ráfaga grande de confeti al entrar en 'goal'/'result' desde 'play'.
+  if (prevPhase === 'play' && (state.phase === 'goal' || state.phase === 'result')) {
+    playGoal();
+    for (let i = 0; i < 4; i++) confetti.burst(90);
+  }
+  prevPhase = state.phase;
+
+  // Lobby (visible hasta iniciar la partida)
+  renderLobby(state);
 
   // HUD
   scoreEl.innerHTML = `<span class="red">${state.score.red}</span> — <span class="blue">${state.score.blue}</span>`;
   if (state.phase === 'result') {
     const w = state.winner === 'red' ? 'ROJO' : 'AZUL';
     bannerEl.textContent = `¡Gana ${w}!`;
+    bannerEl.style.display = 'grid';
+  } else if (state.phase === 'goal') {
+    const s = state.scorer === 'red' ? 'ROJO' : 'AZUL';
+    bannerEl.textContent = `¡GOL ${s}!`;
     bannerEl.style.display = 'grid';
   } else {
     bannerEl.style.display = 'none';

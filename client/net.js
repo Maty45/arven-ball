@@ -26,9 +26,19 @@ export function connect({ name, onWelcome }) {
     if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'input', mx, mz, kick }));
   }
 
+  function start() {
+    if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'start' }));
+  }
+
+  function ready(v) {
+    if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'ready', ready: v }));
+  }
+
   return {
     get myId() { return myId; },
     get buffer() { return buffer; },
     sendInput,
+    start,
+    ready,
   };
 }

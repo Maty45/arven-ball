@@ -19,9 +19,12 @@ export function createGame() {
     players: new Map(), // id -> { id, name, team, x, z, vx, vz, facing, input }
     ball: { x: 0, z: 0, vx: 0, vz: 0 },
     score: { red: 0, blue: 0 },
-    // fase de juego: 'play' | 'result'
+    started: false, // lobby: no arranca hasta que alguien confirme
+    // fase de juego: 'play' | 'goal' (cooldown/festejo) | 'result'
     phase: 'play',
     winner: null,
+    scorer: null, // equipo que acaba de anotar (para el banner)
+    goalUntil: 0,
     resultUntil: 0,
   };
 }
@@ -43,6 +46,7 @@ export function addPlayer(game, id, name) {
     vx: 0, vz: 0,
     facing: team === 'red' ? 0 : Math.PI, // mirando hacia el arco rival
     input: { mx: 0, mz: 0, kick: false },
+    ready: false, // lobby: se marca listo antes de iniciar
   };
   game.players.set(id, p);
   return p;
@@ -50,6 +54,33 @@ export function addPlayer(game, id, name) {
 
 export function removePlayer(game, id) {
   game.players.delete(id);
+  // Sala vacía -> volver al lobby (la próxima persona espera y confirma de nuevo).
+  if (game.players.size === 0) {
+    game.started = false;
+    game.score.red = 0; game.score.blue = 0;
+    game.phase = 'play'; game.winner = null; game.scorer = null;
+    resetPositions(game); // pelota al centro (si no, queda donde la dejaron)
+  }
+}
+
+// Anfitrión = el que entró primero (primer id en la sala).
+export function hostId(game) {
+  const it = game.players.keys().next();
+  return it.done ? null : it.value;
+}
+
+export function setReady(game, id, ready) {
+  const p = game.players.get(id);
+  if (p) p.ready = !!ready;
+}
+
+// Inicia la partida sólo si lo pide el anfitrión y todos están listos.
+export function tryStart(game, id) {
+  if (id !== hostId(game) || game.players.size === 0) return false;
+  for (const p of game.players.values()) if (!p.ready) return false;
+  resetPositions(game); // saque desde el centro, formación limpia
+  game.started = true;
+  return true;
 }
 
 export function setInput(game, id, input) {
@@ -65,16 +96,21 @@ export function setInput(game, id, input) {
 
 function resetPositions(game) {
   game.ball.x = 0; game.ball.z = 0; game.ball.vx = 0; game.ball.vz = 0;
+  // Formación de saque: cada equipo en su mitad, repartidos sobre Z (x y z se resetean).
+  const idx = { red: 0, blue: 0 };
   for (const p of game.players.values()) {
     const dir = p.team === 'red' ? -1 : 1;
+    const i = idx[p.team]++;
     p.x = dir * HALF_L * 0.5;
-    p.z = Math.max(-HALF_W + 2, Math.min(HALF_W - 2, p.z));
+    p.z = (i % 5) * 9 - 18; // abanico sobre su mitad
     p.vx = 0; p.vz = 0;
   }
 }
 
 // Un tick de física. `now` en ms (inyectado; el módulo no llama a Date).
 export function tick(game, now) {
+  if (!game.started) return; // en el lobby está todo congelado
+
   if (game.phase === 'result') {
     if (now >= game.resultUntil) {
       game.score.red = 0; game.score.blue = 0;
@@ -82,7 +118,15 @@ export function tick(game, now) {
       game.phase = 'play';
       resetPositions(game);
     }
-    return;
+    return; // congelado durante el resultado
+  }
+
+  if (game.phase === 'goal') {
+    if (now >= game.goalUntil) {
+      game.scorer = null;
+      game.phase = 'play';
+    }
+    return; // congelado durante el festejo/cooldown (posiciones ya reseteadas)
   }
 
   const dt = TICK_DT;
@@ -166,12 +210,15 @@ export function tick(game, now) {
 
 function scoreGoal(game, team, now) {
   game.score[team] += 1;
+  game.scorer = team;
+  resetPositions(game); // acomoda el saque; queda congelado durante el cooldown
   if (game.score[team] >= RULES.GOALS_TO_WIN) {
     game.phase = 'result';
     game.winner = team;
     game.resultUntil = now + RULES.RESULT_FREEZE_MS;
   } else {
-    resetPositions(game);
+    game.phase = 'goal';
+    game.goalUntil = now + RULES.GOAL_FREEZE_MS;
   }
 }
 
@@ -183,6 +230,7 @@ export function snapshot(game) {
       id: p.id, name: p.name, team: p.team,
       x: +p.x.toFixed(2), z: +p.z.toFixed(2), f: +p.facing.toFixed(2),
       k: p.input.kick, // patada apretada (para animación en el cliente)
+      r: p.ready, // listo en el lobby
     });
   }
   return {
@@ -190,7 +238,10 @@ export function snapshot(game) {
     players,
     ball: { x: +game.ball.x.toFixed(2), z: +game.ball.z.toFixed(2) },
     score: game.score,
+    started: game.started,
+    hostId: hostId(game),
     phase: game.phase,
     winner: game.winner,
+    scorer: game.scorer,
   };
 }
