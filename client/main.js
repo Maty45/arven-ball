@@ -60,7 +60,7 @@ function readKeys() {
   if (keys.has('KeyS') || keys.has('ArrowDown')) fwd -= 1;
   if (keys.has('KeyD') || keys.has('ArrowRight')) right += 1;
   if (keys.has('KeyA') || keys.has('ArrowLeft')) right -= 1;
-  return { fwd, right, kick: keys.has('Space') };
+  return { fwd, right, kick: keys.has('Space'), sprint: keys.has('ShiftLeft') || keys.has('ShiftRight') };
 }
 
 // Yaw de la cámara: sigue el rumbo del jugador con suavizado (no salta).
@@ -129,6 +129,8 @@ const redScoreEl = document.getElementById('redScore');
 const blueScoreEl = document.getElementById('blueScore');
 const clockEl = document.getElementById('clock');
 const bannerEl = document.getElementById('banner');
+const staminaEl = document.getElementById('stamina');
+const staminaFillEl = document.getElementById('staminaFill');
 
 function fmtClock(sec) {
   const m = Math.floor(sec / 60), s = sec % 60;
@@ -258,7 +260,7 @@ function tickRender() {
     let mz = k.fwd * fz + k.right * rz;
     const len = Math.hypot(mx, mz);
     if (len > 1) { mx /= len; mz /= len; }
-    net.sendInput(mx, mz, k.kick);
+    net.sendInput(mx, mz, k.kick, k.sprint);
 
     // La cámara gira hacia el rumbo SOLO si hay avance (fwd>=0). Con S sola no gira:
     // el jugador retrocede y la cámara sigue apuntando adelante.
@@ -295,6 +297,16 @@ function tickRender() {
   redScoreEl.textContent = state.score.red;
   blueScoreEl.textContent = state.score.blue;
   clockEl.textContent = fmtClock(state.clock ?? 0);
+
+  // Barra de stamina del jugador local (valor autoritativo del server).
+  const meState = state.players.find((p) => p.id === net.myId);
+  if (me && state.started && meState?.st != null) {
+    staminaEl.style.display = 'block';
+    staminaFillEl.style.width = `${Math.round(meState.st * 100)}%`;
+    staminaFillEl.classList.toggle('low', meState.st < 0.3);
+  } else {
+    staminaEl.style.display = 'none';
+  }
 
   if (state.phase === 'result') {
     bannerEl.textContent = state.winner ? `¡Gana ${names[state.winner]}!` : '¡Empate!';

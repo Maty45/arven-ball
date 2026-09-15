@@ -22,8 +22,8 @@ export function connect({ name, onWelcome }) {
     }
   });
 
-  function sendInput(mx, mz, kick) {
-    if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'input', mx, mz, kick }));
+  function sendInput(mx, mz, kick, sprint) {
+    if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'input', mx, mz, kick, sprint }));
   }
 
   function start() {

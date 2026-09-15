@@ -15,6 +15,14 @@ export const PLAYER = {
   FRICTION: 9, // desaceleración cuando no hay input (m/s^2)
 };
 
+export const STAMINA = {
+  MAX: 100,
+  DRAIN: 60, // por segundo esprintando (se agota en ~1.7s)
+  REGEN: 20, // por segundo recuperando (más lento que se gasta)
+  SPRINT_MULT: 1.55, // multiplica MAX_SPEED al esprintar
+  MIN_TO_START: 15, // umbral para EMPEZAR a esprintar (histéresis: evita parpadeo al agotarse)
+};
+
 export const BALL = {
   RADIUS: 0.6,
   FRICTION: 1.2, // desaceleración por rodadura (m/s^2) — rueda más lejos en cancha grande

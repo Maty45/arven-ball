@@ -1,5 +1,5 @@
 // Simulación autoritativa. Estado del mundo + tick de física. Sin dependencias.
-import { FIELD, PLAYER, BALL, RULES, TICK_DT } from './constants.js';
+import { FIELD, PLAYER, BALL, STAMINA, RULES, TICK_DT } from './constants.js';
 
 const HALF_L = FIELD.LENGTH / 2;
 const HALF_W = FIELD.WIDTH / 2;
@@ -73,7 +73,9 @@ export function addPlayer(game, id, name) {
     z: spread,
     vx: 0, vz: 0,
     facing: team === 'red' ? 0 : Math.PI, // mirando hacia el arco rival
-    input: { mx: 0, mz: 0, kick: false },
+    input: { mx: 0, mz: 0, kick: false, sprint: false },
+    stamina: STAMINA.MAX,
+    sprinting: false, // estado con histéresis (ver tick)
     ready: false, // lobby: se marca listo antes de iniciar
   };
   game.players.set(id, p);
@@ -117,7 +119,7 @@ export function setInput(game, id, input) {
   let mz = Number(input.mz) || 0;
   const len = Math.hypot(mx, mz);
   if (len > 1) { mx /= len; mz /= len; }
-  p.input = { mx, mz, kick: !!input.kick };
+  p.input = { mx, mz, kick: !!input.kick, sprint: !!input.sprint };
 }
 
 function resetPositions(game) {
@@ -166,7 +168,15 @@ export function tick(game, now) {
   // --- Jugadores: aceleración hacia el input, fricción, tope de velocidad ---
   for (const p of game.players.values()) {
     const { mx, mz } = p.input;
-    if (mx !== 0 || mz !== 0) {
+    const moving = mx !== 0 || mz !== 0;
+    // Sprint con histéresis: para EMPEZAR hace falta MIN_TO_START, pero se puede
+    // seguir esprintando hasta que la stamina llegue a 0 (evita parpadeo al agotarse).
+    p.sprinting = p.input.sprint && moving &&
+      (p.sprinting ? p.stamina > 0 : p.stamina >= STAMINA.MIN_TO_START);
+    if (p.sprinting) p.stamina = Math.max(0, p.stamina - STAMINA.DRAIN * dt);
+    else p.stamina = Math.min(STAMINA.MAX, p.stamina + STAMINA.REGEN * dt);
+    const maxSpeed = PLAYER.MAX_SPEED * (p.sprinting ? STAMINA.SPRINT_MULT : 1);
+    if (moving) {
       p.vx += mx * PLAYER.ACCEL * dt;
       p.vz += mz * PLAYER.ACCEL * dt;
       p.facing = Math.atan2(mz, mx);
@@ -179,7 +189,7 @@ export function tick(game, now) {
         p.vx *= k; p.vz *= k;
       }
     }
-    [p.vx, p.vz] = clampSpeed(p.vx, p.vz, PLAYER.MAX_SPEED);
+    [p.vx, p.vz] = clampSpeed(p.vx, p.vz, maxSpeed);
     p.x += p.vx * dt;
     p.z += p.vz * dt;
     // Confinar al campo (los jugadores no salen).
@@ -278,6 +288,7 @@ export function snapshot(game) {
       id: p.id, name: p.name, team: p.team,
       x: +p.x.toFixed(2), z: +p.z.toFixed(2), f: +p.facing.toFixed(2),
       k: p.input.kick, // patada apretada (para animación en el cliente)
+      st: +(p.stamina / STAMINA.MAX).toFixed(2), // stamina 0..1 (barra en el HUD)
       r: p.ready, // listo en el lobby
     });
   }
