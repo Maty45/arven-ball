@@ -30,23 +30,10 @@ const kickSound = new Audio('/sounds/kick.ogg');
 kickSound.volume = 0.35;
 function playKick() { const s = kickSound.cloneNode(); s.volume = 0.35; s.play().catch(() => {}); }
 
-// Sonido de gol/festejo sintetizado con WebAudio (sin descargar assets).
-let actx = null;
-function audioCtx() { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); return actx; }
-function tone(freq, start, dur, gain = 0.18, type = 'square') {
-  const a = audioCtx(), o = a.createOscillator(), g = a.createGain();
-  o.type = type; o.frequency.value = freq; o.connect(g); g.connect(a.destination);
-  const t = a.currentTime + start;
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(gain, t + 0.02);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.start(t); o.stop(t + dur);
-}
-// Arpegio ascendente + remate: suena a festejo de gol.
-function playGoal() {
-  [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.11, 0.28));
-  tone(1319, 0.44, 0.5, 0.16, 'triangle');
-}
+// Sonido de gol/festejo (mp3). Se reinicia por si suena en ráfaga.
+const goalSound = new Audio('/sounds/goal.mp3');
+goalSound.volume = 0.2;
+function playGoal() { goalSound.currentTime = 0; goalSound.play().catch(() => {}); }
 
 // --- Input ---
 const keys = new Set();
@@ -76,7 +63,7 @@ nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') doJoin(); });
 
 function doJoin() {
   const name = (nameEl.value || 'anon').trim().slice(0, 16);
-  audioCtx().resume().catch(() => {}); // desbloquear audio con el gesto del click
+  goalSound.play().then(() => { goalSound.pause(); goalSound.currentTime = 0; }).catch(() => {}); // desbloquear audio con el gesto del click
   net = connect({ name });
   joinEl.style.display = 'none';
   lobbyEl.style.display = 'grid'; // esperar en el lobby hasta iniciar
