@@ -434,13 +434,17 @@ export function buildKickClip(template) {
 }
 
 // Avatar de un jugador: clona el modelo (o cápsula de fallback) + mixer de animación.
-// Devuelve { obj, mixer, actions } — actions = { idle, run, jump, kick } o null si es cápsula.
+// Devuelve { obj, tilt, mixer, actions } — tilt = pivote para tumbarlo; actions = { idle, run, jump, kick } o null si es cápsula.
 // showTag: mostrar el nombre encima (típicamente los otros jugadores, no uno mismo).
 export function makeAvatar(template, team, name, showTag) {
   const group = new THREE.Group();
   group.add(makeShadow(1.6));  // sombra bajo los pies
   group.add(teamDisc(team)); // marca de equipo bajo los pies (siempre visible)
   if (showTag && name) group.add(makeNameTag(name));
+  // Pivote en los pies para tumbar el cuerpo al caer (rotation.z > 0 = de espaldas;
+  // el +X local del grupo es "adelante"). Sombra, disco y nombre quedan fuera.
+  const tilt = new THREE.Group();
+  group.add(tilt);
 
   if (!template) {
     // Fallback: cápsula del color del equipo.
@@ -449,8 +453,8 @@ export function makeAvatar(template, team, name, showTag) {
       new THREE.MeshStandardMaterial({ color: TEAM_COLOR[team] || 0xcccccc })
     );
     body.position.y = PLAYER.RADIUS + 0.8;
-    group.add(body);
-    return { obj: group, mixer: null, actions: null };
+    tilt.add(body);
+    return { obj: group, tilt, mixer: null, actions: null };
   }
 
   const model = cloneSkinned(template.scene);
@@ -473,7 +477,7 @@ export function makeAvatar(template, team, name, showTag) {
   // Cabezones (modo broma): agrandamos el hueso Head; la malla lo sigue por skinning.
   const head = model.getObjectByName('Head');
   if (head) head.scale.setScalar(HEAD_SCALE);
-  group.add(model);
+  tilt.add(model);
 
   const mixer = new THREE.AnimationMixer(model);
   const find = (kw) => template.animations.find((a) => a.name.toLowerCase().includes(kw));
@@ -490,7 +494,7 @@ export function makeAvatar(template, team, name, showTag) {
     jump: mk(find('jump'), 'once'),
     kick: template.__kickClip ? mk(template.__kickClip, 'once') : null,
   };
-  return { obj: group, mixer, actions };
+  return { obj: group, tilt, mixer, actions };
 }
 
 // Textura de pelota dibujada en canvas (sin descargar nada): blanca con parches negros.

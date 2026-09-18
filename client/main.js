@@ -184,7 +184,7 @@ function tickRender() {
     let entry = players.get(p.id);
     if (!entry) {
       entry = makeAvatar(playerTemplate, p.team, p.name, p.id !== net.myId); // { obj, mixer, actions }
-      entry.current = null; entry.lastKick = false; entry.jumpUntil = 0;
+      entry.current = null; entry.lastKick = false; entry.jumpUntil = 0; entry.fall = 0;
       scene.add(entry.obj);
       players.set(p.id, entry);
     }
@@ -203,8 +203,14 @@ function tickRender() {
     }
     entry.lastKick = p.k;
     const moving = Math.hypot(p.x - pp.x, p.z - pp.z) > 0.05;
-    setAction(entry, now < entry.jumpUntil ? kickName : moving ? 'run' : 'idle');
+    setAction(entry, now < entry.jumpUntil ? kickName : moving && !p.dn ? 'run' : 'idle');
     entry.mixer?.update(dt);
+
+    // Caído por una patada: se tumba de espaldas de golpe y se levanta más lento.
+    const fall = p.dn ? 1 : 0;
+    entry.fall += (fall - entry.fall) * (1 - Math.exp(-dt * (p.dn ? 14 : 6)));
+    entry.tilt.rotation.z = entry.fall * Math.PI / 2;
+    entry.tilt.position.y = entry.fall * 0.35; // que la espalda no se hunda en el pasto
 
     if (p.id === net.myId) { me = { x, z, f: lerpAngle(pp.f, p.f, alpha) }; myEntry = entry; }
   }
