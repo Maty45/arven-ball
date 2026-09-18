@@ -4,6 +4,7 @@ import { FIELD, PLAYER, BALL, STAMINA, RULES, TICK_DT } from './constants.js';
 const HALF_L = FIELD.LENGTH / 2;
 const HALF_W = FIELD.WIDTH / 2;
 const HALF_GOAL = FIELD.GOAL_WIDTH / 2;
+const NO_INPUT = { mx: 0, mz: 0, kick: false, sprint: false }; // lo que "aprieta" un caído
 
 // Nombres de equipo random con temática de programación.
 const TEAM_NAMES = [
@@ -76,6 +77,9 @@ export function addPlayer(game, id, name) {
     input: { mx: 0, mz: 0, kick: false, sprint: false },
     stamina: STAMINA.MAX,
     sprinting: false, // estado con histéresis (ver tick)
+    prevKick: false, // para detectar el flanco de la patada
+    down: false, // tirado en el piso por una patada (sin control hasta downUntil)
+    downUntil: 0,
     ready: false, // lobby: se marca listo antes de iniciar
   };
   game.players.set(id, p);
@@ -132,6 +136,7 @@ function resetPositions(game) {
     p.x = dir * HALF_L * 0.5;
     p.z = (i % 5) * 9 - 18; // abanico sobre su mitad
     p.vx = 0; p.vz = 0;
+    p.down = false; p.downUntil = 0; // en el saque todos de pie
   }
 }
 
@@ -165,13 +170,32 @@ export function tick(game, now) {
     return;
   }
 
+  // --- Patada a un rival: al apretar (flanco), el rival de enfrente en rango se cae ---
+  for (const p of game.players.values()) if (p.down && now >= p.downUntil) p.down = false;
+  for (const p of game.players.values()) {
+    const pressed = p.input.kick && !p.prevKick;
+    p.prevKick = p.input.kick;
+    if (!pressed || p.down) continue;
+    const fx = Math.cos(p.facing), fz = Math.sin(p.facing);
+    for (const q of game.players.values()) {
+      if (q.team === p.team || q.down) continue;
+      const dx = q.x - p.x, dz = q.z - p.z;
+      const d = Math.hypot(dx, dz);
+      // Fuera de alcance o no lo está mirando (cono de ~150°).
+      if (d > PLAYER.TACKLE_RANGE || dx * fx + dz * fz < d * 0.25) continue;
+      q.down = true;
+      q.downUntil = now + PLAYER.FALL_MS;
+      q.vx = fx * PLAYER.TACKLE_PUSH; q.vz = fz * PLAYER.TACKLE_PUSH; // sale despedido y se frena por fricción
+    }
+  }
+
   // --- Jugadores: aceleración hacia el input, fricción, tope de velocidad ---
   for (const p of game.players.values()) {
-    const { mx, mz } = p.input;
+    const { mx, mz, sprint } = p.down ? NO_INPUT : p.input; // caído: no controla
     const moving = mx !== 0 || mz !== 0;
     // Sprint con histéresis: para EMPEZAR hace falta MIN_TO_START, pero se puede
     // seguir esprintando hasta que la stamina llegue a 0 (evita parpadeo al agotarse).
-    p.sprinting = p.input.sprint && moving &&
+    p.sprinting = sprint && moving &&
       (p.sprinting ? p.stamina > 0 : p.stamina >= STAMINA.MIN_TO_START);
     if (p.sprinting) p.stamina = Math.max(0, p.stamina - STAMINA.DRAIN * dt);
     else p.stamina = Math.min(STAMINA.MAX, p.stamina + STAMINA.REGEN * dt);
@@ -241,7 +265,7 @@ export function tick(game, now) {
       b.vz += p.vz * 0.5;
     }
     // Patada: dentro de rango y con tecla, impulso en la dirección en que mira.
-    if (p.input.kick && d < BALL.KICK_RANGE) {
+    if (p.input.kick && !p.down && d < BALL.KICK_RANGE) {
       b.vx += Math.cos(p.facing) * BALL.KICK_IMPULSE;
       b.vz += Math.sin(p.facing) * BALL.KICK_IMPULSE;
     }
@@ -287,7 +311,8 @@ export function snapshot(game) {
     players.push({
       id: p.id, name: p.name, team: p.team,
       x: +p.x.toFixed(2), z: +p.z.toFixed(2), f: +p.facing.toFixed(2),
-      k: p.input.kick, // patada apretada (para animación en el cliente)
+      k: p.input.kick && !p.down, // patada apretada (para animación en el cliente)
+      dn: p.down, // tirado en el piso
       st: +(p.stamina / STAMINA.MAX).toFixed(2), // stamina 0..1 (barra en el HUD)
       r: p.ready, // listo en el lobby
     });

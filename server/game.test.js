@@ -1,7 +1,7 @@
 // Self-check: `node server/game.test.js`. Falla (throw) si la lógica se rompe.
 import assert from 'node:assert';
 import { createGame, addPlayer, setInput, setReady, tryStart, tick, snapshot } from './game.js';
-import { FIELD, BALL, RULES, TICK_DT } from './constants.js';
+import { FIELD, BALL, PLAYER, RULES, TICK_DT } from './constants.js';
 
 const HALF_L = FIELD.LENGTH / 2;
 
@@ -121,6 +121,41 @@ const HALF_L = FIELD.LENGTH / 2;
   tick(g, 1000);
   const d = Math.hypot(b.x - a.x, b.z - a.z);
   assert.ok(d > 1.5, 'los jugadores se separan al colisionar');
+}
+
+// 11) Patada a un rival de frente: se cae, no controla y se levanta a los FALL_MS.
+{
+  const g = createGame(); g.started = true;
+  const a = addPlayer(g, 'a', 'A'), b = addPlayer(g, 'b', 'B'); // a red, b blue
+  a.x = 0; a.z = 0; a.facing = 0; b.x = 2.5; b.z = 0; // b adelante de a, en rango
+  g.ball.x = 50; // pelota lejos
+  setInput(g, 'a', { mx: 0, mz: 0, kick: true });
+  tick(g, 1000);
+  assert.ok(b.down, 'el rival pateado se cae');
+  assert.strictEqual(snapshot(g).players.find((p) => p.id === 'b').dn, true, 'el snapshot informa que está caído');
+  setInput(g, 'b', { mx: -1, mz: 0, kick: false });
+  tick(g, 1500);
+  assert.ok(b.vx >= 0, 'caído no controla (sigue despedido hacia +X, no va a -X)');
+  tick(g, 1000 + PLAYER.FALL_MS);
+  assert.ok(!b.down, 'se levanta a los FALL_MS');
+  // Mantener apretado no lo vuelve a tirar: hace falta soltar y volver a patear.
+  b.x = a.x + 2.5; b.z = 0;
+  tick(g, 4000);
+  assert.ok(!b.down, 'mantener la patada apretada no lo re-tira');
+}
+
+// 12) Compañero de equipo o rival a espaldas: no se caen.
+{
+  const g = createGame(); g.started = true;
+  const a = addPlayer(g, 'a', 'A'), b = addPlayer(g, 'b', 'B'), c = addPlayer(g, 'c', 'C'); // c red
+  a.x = 0; a.z = 0; a.facing = 0;
+  c.x = 2.5; c.z = 0;   // compañero adelante
+  b.x = -2.5; b.z = 0;  // rival atrás
+  g.ball.x = 50;
+  setInput(g, 'a', { mx: 0, mz: 0, kick: true });
+  tick(g, 1000);
+  assert.ok(!c.down, 'no se tira a un compañero');
+  assert.ok(!b.down, 'no se tira a un rival que está a espaldas');
 }
 
 console.log('game.test.js OK');

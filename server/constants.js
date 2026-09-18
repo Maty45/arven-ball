@@ -13,6 +13,9 @@ export const PLAYER = {
   ACCEL: 90, // m/s^2 hacia el input
   MAX_SPEED: 22, // m/s (cancha más grande -> un poco más rápido)
   FRICTION: 9, // desaceleración cuando no hay input (m/s^2)
+  TACKLE_RANGE: 4.0, // patear a un rival a esta distancia (centro a centro, de frente) lo tira
+  TACKLE_PUSH: 10, // m/s con los que sale despedido el que cae
+  FALL_MS: 2000, // cuánto tarda en levantarse
 };
 
 export const STAMINA = {
@@ -28,7 +31,7 @@ export const BALL = {
   FRICTION: 1.2, // desaceleración por rodadura (m/s^2) — rueda más lejos en cancha grande
   MAX_SPEED: 60,
   KICK_IMPULSE: 36, // m/s que suma una patada
-  KICK_RANGE: 2.2, // distancia jugador-pelota para poder patear (centro a centro)
+  KICK_RANGE: 3.0, // distancia jugador-pelota para poder patear (centro a centro)
 };
 
 export const RULES = {
